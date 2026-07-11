@@ -9,16 +9,16 @@ dotenvy = "0.15.7"
 futures = "0.3.31"
 poem = { version = "3.1.12", features = ["test"] }
 poem-openapi = { version = "5.1.16", features = ["chrono", "swagger-ui", "redoc"] }
-reqwest = { version = "0.12.25", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = "1.0.228"
 chrono = { version = "0.4", features = ["serde"] }
-sqlx = {version = "0.8.6", features = [ "runtime-tokio-rustls", "sqlite", "macros", "chrono" ] }
-tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "signal", "sync"] }
+sqlx = {version = "0.9.0", features = [ "runtime-tokio", "tls-rustls", "sqlite", "macros", "chrono" ] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "signal", "sync"] }
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 bcrypt = "0.19.1"
-libc = "0.2.177"
+libc = "0.2.186"
 secrecy = "0.10.3"
 
 [profile.release]
