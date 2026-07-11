@@ -1,0 +1,78 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and Push ARM64 Image
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_CLIENT }}
+          oauth-secret: ${{ secrets.TAILSCALE_SECRET }}
+          tags: tag:gh-runner
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools sqlite3
+
+      - name: Install Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-unknown-linux-musl
+
+      - name: Setup Mock Database (for sqlx)
+        run: |
+          sqlite3 /tmp/db.sqlite "VACUUM;"
+          cat migrations/*.sql | sqlite3 /tmp/db.sqlite
+
+      - name: Run Tests
+        env:
+          DATABASE_URL: sqlite:///tmp/db.sqlite
+          JWT_SECRET: s3cr3t-test-key
+        run: cargo test
+
+      - name: Build Binary
+        env:
+          DATABASE_URL: sqlite:///tmp/db.sqlite
+          CC_aarch64_unknown_linux_musl: musl-gcc
+          CFLAGS_aarch64_unknown_linux_musl: "-O3 -mcpu=neoverse-n1"
+          RUSTFLAGS: "-C target-cpu=neoverse-n1"
+        run: cargo build --release --target aarch64-unknown-linux-musl
+
+      - name: Build and Push with Podman
+        run: |
+          # Route registry through Tailscale IP
+          echo "${{ secrets.TAILSCALE_REGISTRY_IP }} registry.sh-lucas.dev" | sudo tee -a /etc/hosts
+
+          # Generate tag
+          DATE=$(date +'%Y.%m.%d')
+          RUN_NUM=$(printf "%03d" "${{ github.run_number }}")
+          COMMIT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG="${DATE}--${RUN_NUM}--${COMMIT_SHA}"
+
+          # Login to registry
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | podman login registry.sh-lucas.dev \
+            -u "${{ secrets.REGISTRY_USER }}" \
+            --password-stdin
+
+          # Build image
+          podman build \
+            -t registry.sh-lucas.dev/checkup:${TAG} \
+            -t registry.sh-lucas.dev/checkup:latest \
+            .
+
+          # Push image
+          podman push registry.sh-lucas.dev/checkup:${TAG}
+          podman push registry.sh-lucas.dev/checkup:latest
