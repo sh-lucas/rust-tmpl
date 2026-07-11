@@ -18,6 +18,8 @@ mod helpers;
 mod middlewares;
 mod routes;
 
+use secrecy::ExposeSecret;
+
 use crate::config::Config;
 
 #[tokio::main]
@@ -26,7 +28,7 @@ async fn main() -> Result<(), std::io::Error> {
 
     let config = Config::from_env();
 
-    let pool = database::setup_database(&config.database_url).await;
+    let pool = database::setup_database(config.database_url.expose_secret()).await;
 
     let app = routes::with_routes(Route::new())
         .with(AddData::new(pool.clone()))

@@ -1,5 +1,6 @@
 use bcrypt::{DEFAULT_COST, hash, verify};
 use poem_openapi::payload::Json;
+use secrecy::ExposeSecret;
 use sqlx::SqlitePool;
 
 use super::{
@@ -79,7 +80,12 @@ pub async fn login(
 
     match verify(&req.password, &row.password_hash) {
         Ok(true) => {
-            let token = gen_auth_token(row.id, TokenType::Access, 24, &config.jwt_secret);
+            let token = gen_auth_token(
+                row.id,
+                TokenType::Access,
+                24,
+                config.jwt_secret.expose_secret(),
+            );
             LoginApiResponse::Ok(Json(LoginResponse {
                 token,
                 user: UserResponse {
@@ -135,8 +141,8 @@ mod tests {
 
         let config = crate::config::Config {
             port: 3000,
-            database_url: "sqlite::memory:".to_string(),
-            jwt_secret: "test-secret-key-1234567890".to_string(),
+            database_url: secrecy::SecretString::from("sqlite::memory:".to_string()),
+            jwt_secret: secrecy::SecretString::from("test-secret-key-1234567890".to_string()),
         };
 
         // Build app

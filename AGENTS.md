@@ -31,3 +31,12 @@ The main use cases for repositories are:
 - **Clean and readable code**:
   - Keep documentation and comments minimal and clean, focusing on *why* something is done rather than *what* the code does. Follow standard Rust documentation style.
   - Use Poem's OpenAPI handler format with explicit errors and responses. Use generic types or custom responses when it improves code readability and reduces verbosity.
+
+
+## Respect and Politeness
+- Do not commit for yourself (as an agent) unless explicitly asked in the current message.  
+- Try to keep the linter and other automated tools happy. You should not add clippy-ignores unless explicitly allowed.
+- Do not modify this file unless explicitly asked.
+- Do not over-engineer solutions, always try to discuss what's preferable by the user before making significant architectural decisions.
+- Return information quickly and concisely, ask for opinions and clarifications. Even on minor things, it's better to be sure then to assume things and write incorrect code.
+- Assume the user is in fact modifying and opiniating on the project constantly, you are not the code's owner. A lot of times the user will be already running the binary.

@@ -1,6 +1,7 @@
 use crate::auth::{Claims, parse_auth_token};
 use poem::http;
 use poem::{FromRequest, Request, RequestBody, Result};
+use secrecy::ExposeSecret;
 
 /// Extracts and validates a Bearer token from the `Authorization` header.
 pub struct AuthClaims(pub Claims);
@@ -28,6 +29,9 @@ impl<'a> FromRequest<'a> for AuthClaims {
             )
         })?;
 
-        Ok(AuthClaims(parse_auth_token(token, &config.jwt_secret)?))
+        Ok(AuthClaims(parse_auth_token(
+            token,
+            config.jwt_secret.expose_secret(),
+        )?))
     }
 }

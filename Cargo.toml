@@ -19,6 +19,7 @@ serde_json = "1.0.149"
 thiserror = "2.0.18"
 bcrypt = "0.19.1"
 libc = "0.2.177"
+secrecy = "0.10.3"
 
 [profile.release]
 opt-level = 3
