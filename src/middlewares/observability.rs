@@ -82,6 +82,10 @@ impl<E: Endpoint> Endpoint for HttpObservabilityEndpoint<E> {
     type Output = Response;
 
     async fn call(&self, req: Request) -> Result<Self::Output> {
+        if is_health_check(&req) {
+            return self.ep.call(req).await.map(IntoResponse::into_response);
+        }
+
         let request_id = req
             .header("x-request-id")
             .filter(|value| value.len() <= 128)
@@ -159,6 +163,10 @@ impl<E: Endpoint> Endpoint for HttpObservabilityEndpoint<E> {
     }
 }
 
+fn is_health_check(req: &Request) -> bool {
+    req.method() == poem::http::Method::GET && matches!(req.uri().path(), "/" | "/healthz")
+}
+
 fn next_request_id() -> String {
     format!("{:016x}", NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed))
 }
@@ -184,5 +192,41 @@ impl Extractor for HeaderMapExtractor<'_> {
 
     fn keys(&self) -> Vec<&str> {
         self.0.keys().map(header::HeaderName::as_str).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_health_check;
+    use poem::{
+        Request,
+        http::{Method, Uri},
+    };
+
+    #[test]
+    fn identifies_health_checks() {
+        for path in ["/", "/healthz"] {
+            let request = Request::builder()
+                .method(Method::GET)
+                .uri(Uri::from_static(path))
+                .finish();
+            assert!(is_health_check(&request));
+        }
+    }
+
+    #[test]
+    fn keeps_other_requests_observable() {
+        for (method, path) in [
+            (Method::POST, "/"),
+            (Method::POST, "/healthz"),
+            (Method::GET, "/healthz/details"),
+            (Method::GET, "/users"),
+        ] {
+            let request = Request::builder()
+                .method(method)
+                .uri(Uri::from_static(path))
+                .finish();
+            assert!(!is_health_check(&request));
+        }
     }
 }
