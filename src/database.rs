@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use nix::sys::statfs::{
-    BTRFS_SUPER_MAGIC, EXT4_SUPER_MAGIC, FsType, OVERLAYFS_SUPER_MAGIC, TMPFS_MAGIC,
-    XFS_SUPER_MAGIC, statfs,
+    BTRFS_SUPER_MAGIC, EXT4_SUPER_MAGIC, FsType, OVERLAYFS_SUPER_MAGIC, TMPFS_MAGIC, statfs,
 };
 use sqlx::ConnectOptions;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
@@ -73,7 +72,7 @@ fn verify_sqlite_filesystem(database_path: &Path) -> Result<(), String> {
 
     Err(format!(
         "SQLite database '{}' is on unsupported filesystem type {filesystem_type:?}; \
-         only ext4, XFS, Btrfs, tmpfs and OverlayFS are accepted",
+         only ext4, Btrfs, tmpfs and OverlayFS are accepted",
         database_path.display()
     ))
 }
@@ -81,11 +80,7 @@ fn verify_sqlite_filesystem(database_path: &Path) -> Result<(), String> {
 fn supported_local_filesystem(filesystem_type: FsType) -> bool {
     matches!(
         filesystem_type,
-        EXT4_SUPER_MAGIC
-            | XFS_SUPER_MAGIC
-            | BTRFS_SUPER_MAGIC
-            | TMPFS_MAGIC
-            | OVERLAYFS_SUPER_MAGIC
+        EXT4_SUPER_MAGIC | BTRFS_SUPER_MAGIC | TMPFS_MAGIC | OVERLAYFS_SUPER_MAGIC
     )
 }
 
