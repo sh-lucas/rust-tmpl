@@ -34,16 +34,9 @@ pub fn init(config: &ObservabilityConfig) -> ObservabilityGuard {
     global::set_text_map_propagator(TraceContextPropagator::new());
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
-    let json_layer = tracing_subscriber::fmt::layer()
-        .json()
-        .with_current_span(true)
-        .with_span_list(false);
 
     let Some(endpoint) = config.otlp_endpoint.as_deref() else {
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(json_layer)
-            .init();
+        init_subscriber(config, filter, None);
         return ObservabilityGuard {
             tracer_provider: None,
             meter_provider: None,
@@ -96,23 +89,52 @@ pub fn init(config: &ObservabilityConfig) -> ObservabilityGuard {
 
     if let Some(provider) = &tracer_provider {
         global::set_tracer_provider(provider.clone());
-        let telemetry = tracing_opentelemetry::layer().with_tracer(provider.tracer("rust-tmpl"));
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(json_layer)
-            .with(telemetry)
-            .init();
-    } else {
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(json_layer)
-            .init();
+    }
+    init_subscriber(config, filter, tracer_provider.as_ref());
+
+    if tracer_provider.is_none() {
         tracing::warn!("OTLP configuration is invalid; remote telemetry disabled");
     }
 
     ObservabilityGuard {
         tracer_provider,
         meter_provider,
+    }
+}
+
+fn init_subscriber(
+    config: &ObservabilityConfig,
+    filter: EnvFilter,
+    tracer_provider: Option<&SdkTracerProvider>,
+) {
+    if config.deployment_environment == "local" {
+        let telemetry = tracer_provider.map(|provider| {
+            tracing_opentelemetry::layer().with_tracer(provider.tracer("rust-tmpl"))
+        });
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .pretty()
+                    .with_ansi(true)
+                    .with_target(false),
+            )
+            .with(telemetry)
+            .init();
+    } else {
+        let telemetry = tracer_provider.map(|provider| {
+            tracing_opentelemetry::layer().with_tracer(provider.tracer("rust-tmpl"))
+        });
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_current_span(true)
+                    .with_span_list(false),
+            )
+            .with(telemetry)
+            .init();
     }
 }
 
