@@ -6,7 +6,12 @@ use opentelemetry_sdk::{
     Resource, metrics::SdkMeterProvider, propagation::TraceContextPropagator,
     trace::SdkTracerProvider,
 };
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    EnvFilter,
+    filter::filter_fn,
+    layer::{Layer, SubscriberExt},
+    util::SubscriberInitExt,
+};
 
 use crate::config::ObservabilityConfig;
 
@@ -112,14 +117,15 @@ fn init_subscriber(
             tracing_opentelemetry::layer().with_tracer(provider.tracer("rust-tmpl"))
         });
         tracing_subscriber::registry()
-            .with(filter)
+            .with(telemetry)
             .with(
                 tracing_subscriber::fmt::layer()
-                    .pretty()
+                    .compact()
                     .with_ansi(true)
-                    .with_target(false),
+                    .with_target(false)
+                    .with_filter(filter_fn(is_event)),
             )
-            .with(telemetry)
+            .with(filter)
             .init();
     } else {
         let telemetry = tracer_provider.map(|provider| {
@@ -136,6 +142,10 @@ fn init_subscriber(
             .with(telemetry)
             .init();
     }
+}
+
+fn is_event(metadata: &tracing::Metadata<'_>) -> bool {
+    metadata.is_event()
 }
 
 fn signal_endpoint(base_endpoint: &str, signal: &str) -> String {

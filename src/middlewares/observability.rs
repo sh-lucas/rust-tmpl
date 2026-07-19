@@ -125,15 +125,15 @@ impl<E: Endpoint> Endpoint for HttpObservabilityEndpoint<E> {
                 Ok(mut response) => {
                     let route = response
                         .data::<PathPattern>()
-                        .map_or("unmatched", |pattern| pattern.0.as_ref());
+                        .map_or_else(|| "unmatched".to_string(), |pattern| pattern.0.to_string());
                     let status = response.status();
-                    let attributes = request_attributes(&method, route, status.as_u16());
+                    let attributes = request_attributes(&method, &route, status.as_u16());
                     requests.add(1, &attributes);
                     duration.record(elapsed.as_secs_f64(), &attributes);
                     if status.is_server_error() {
                         errors.add(1, &attributes);
                     }
-                    span_for_request.record("route", route);
+                    span_for_request.record("route", route.as_str());
                     span_for_request.record("status", status.as_u16());
                     span_for_request.record("duration_ms", elapsed_ms);
                     response.headers_mut().insert(
@@ -141,7 +141,13 @@ impl<E: Endpoint> Endpoint for HttpObservabilityEndpoint<E> {
                         HeaderValue::from_str(&request_id)
                             .expect("request IDs only contain safe ASCII characters"),
                     );
-                    tracing::info!(status = status.as_u16(), duration_ms = elapsed_ms, "request completed");
+                    tracing::info!(
+                        method = %method,
+                        route = %route,
+                        status = status.as_u16(),
+                        duration_ms = elapsed_ms,
+                        "request completed"
+                    );
                     Ok(response)
                 }
                 Err(error) => {
@@ -153,7 +159,14 @@ impl<E: Endpoint> Endpoint for HttpObservabilityEndpoint<E> {
                     span_for_request.record("route", "unmatched");
                     span_for_request.record("status", status.as_u16());
                     span_for_request.record("duration_ms", elapsed_ms);
-                    tracing::warn!(status = status.as_u16(), duration_ms = elapsed_ms, error = %error, "request failed");
+                    tracing::warn!(
+                        method = %method,
+                        route = "unmatched",
+                        status = status.as_u16(),
+                        duration_ms = elapsed_ms,
+                        error = %error,
+                        "request failed"
+                    );
                     Err(error)
                 }
             }
