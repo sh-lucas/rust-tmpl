@@ -35,17 +35,19 @@ impl ObservabilityGuard {
     }
 }
 
-pub fn init(config: &ObservabilityConfig) -> ObservabilityGuard {
+pub fn init(
+    config: &ObservabilityConfig,
+) -> Result<ObservabilityGuard, opentelemetry_otlp::ExporterBuildError> {
     global::set_text_map_propagator(TraceContextPropagator::new());
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
 
     let Some(endpoint) = config.otlp_endpoint.as_deref() else {
         init_subscriber(config, filter, None);
-        return ObservabilityGuard {
+        return Ok(ObservabilityGuard {
             tracer_provider: None,
             meter_provider: None,
-        };
+        });
     };
 
     let resource = Resource::builder_empty()
@@ -61,50 +63,35 @@ pub fn init(config: &ObservabilityConfig) -> ObservabilityGuard {
     let trace_endpoint = signal_endpoint(endpoint, "traces");
     let metric_endpoint = signal_endpoint(endpoint, "metrics");
 
-    let tracer_provider = opentelemetry_otlp::SpanExporter::builder()
+    let tracer_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_http()
         .with_protocol(Protocol::HttpBinary)
         .with_endpoint(trace_endpoint)
         .with_timeout(Duration::from_secs(3))
-        .build()
-        .ok()
-        .map(|exporter| {
-            SdkTracerProvider::builder()
-                .with_batch_exporter(exporter)
-                .with_resource(resource.clone())
-                .build()
-        });
-    let meter_provider = opentelemetry_otlp::MetricExporter::builder()
+        .build()?;
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_batch_exporter(tracer_exporter)
+        .with_resource(resource.clone())
+        .build();
+    let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_http()
         .with_protocol(Protocol::HttpBinary)
         .with_endpoint(metric_endpoint)
         .with_timeout(Duration::from_secs(3))
-        .build()
-        .ok()
-        .map(|exporter| {
-            SdkMeterProvider::builder()
-                .with_periodic_exporter(exporter)
-                .with_resource(resource)
-                .build()
-        });
+        .build()?;
+    let meter_provider = SdkMeterProvider::builder()
+        .with_periodic_exporter(metric_exporter)
+        .with_resource(resource)
+        .build();
 
-    if let Some(provider) = &meter_provider {
-        global::set_meter_provider(provider.clone());
-    }
+    global::set_meter_provider(meter_provider.clone());
+    global::set_tracer_provider(tracer_provider.clone());
+    init_subscriber(config, filter, Some(&tracer_provider));
 
-    if let Some(provider) = &tracer_provider {
-        global::set_tracer_provider(provider.clone());
-    }
-    init_subscriber(config, filter, tracer_provider.as_ref());
-
-    if tracer_provider.is_none() {
-        tracing::warn!("OTLP configuration is invalid; remote telemetry disabled");
-    }
-
-    ObservabilityGuard {
-        tracer_provider,
-        meter_provider,
-    }
+    Ok(ObservabilityGuard {
+        tracer_provider: Some(tracer_provider),
+        meter_provider: Some(meter_provider),
+    })
 }
 
 fn init_subscriber(

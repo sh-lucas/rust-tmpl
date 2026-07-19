@@ -28,7 +28,8 @@ async fn main() -> Result<(), std::io::Error> {
     dotenv().ok();
 
     let config = Config::from_env();
-    let observability = observability::init(&config.observability);
+    let observability = observability::init(&config.observability)
+        .expect("failed to initialize configured OTLP exporters");
 
     let pool = database::setup_database(
         config.database_url.expose_secret(),
