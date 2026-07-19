@@ -7,6 +7,7 @@ edition = "2024"
 async-channel = "2.5.0"
 dotenvy = "0.15.7"
 futures = "0.3.31"
+nix = { version = "0.30.1", features = ["fs"] }
 poem = { version = "3.1.12", features = ["test"] }
 poem-openapi = { version = "5.1.16", features = ["chrono", "swagger-ui", "redoc"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
