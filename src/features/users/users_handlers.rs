@@ -11,6 +11,7 @@ use crate::auth::{TokenType, gen_auth_token};
 use crate::helpers::is_unique_err;
 use crate::middlewares::AuthClaims;
 
+#[tracing::instrument(skip(pool, req))]
 pub async fn register(pool: &SqlitePool, req: CreateUserRequest) -> RegisterResponse {
     if req.email.trim().is_empty() || req.password.len() < 6 {
         return RegisterResponse::BadRequest(Json(ErrorResponse {
@@ -52,6 +53,7 @@ pub async fn register(pool: &SqlitePool, req: CreateUserRequest) -> RegisterResp
     }
 }
 
+#[tracing::instrument(skip(pool, config, req))]
 pub async fn login(
     pool: &SqlitePool,
     config: &crate::config::Config,
@@ -101,6 +103,7 @@ pub async fn login(
     }
 }
 
+#[tracing::instrument(skip(pool, auth))]
 pub async fn me(pool: &SqlitePool, auth: AuthClaims) -> MeResponse {
     let user_id = auth.0.sub;
 
@@ -143,6 +146,13 @@ mod tests {
             port: 3000,
             database_url: secrecy::SecretString::from("sqlite::memory:".to_string()),
             jwt_secret: secrecy::SecretString::from("test-secret-key-1234567890".to_string()),
+            observability: crate::config::ObservabilityConfig {
+                service_name: "rust-tmpl-test".to_string(),
+                service_version: "test".to_string(),
+                deployment_environment: "test".to_string(),
+                otlp_endpoint: None,
+                slow_query_threshold: std::time::Duration::from_millis(250),
+            },
         };
 
         // Build app

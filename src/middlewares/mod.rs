@@ -1,5 +1,5 @@
 pub use auth::AuthClaims;
-pub use basic_log::BasicLog;
+pub use observability::HttpObservability;
 
 mod auth;
-mod basic_log;
+mod observability;

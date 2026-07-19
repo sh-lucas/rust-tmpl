@@ -7,12 +7,12 @@ use tokio::task::JoinHandle;
 /// `main` abort the tasks on shutdown.
 pub fn start(_pool: Pool<Sqlite>) -> JoinHandle<()> {
     tokio::spawn(async move {
-        // println!("Background worker started.");
+        tracing::info!("background worker started");
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
         loop {
             interval.tick().await;
             // Place periodic cleanup/telemetry tasks here.
-            // println!("Background worker tick.");
+            tracing::debug!("background worker tick");
         }
     })
 }

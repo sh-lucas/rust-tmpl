@@ -4,9 +4,13 @@ use nix::sys::statfs::{
     BTRFS_SUPER_MAGIC, EXT4_SUPER_MAGIC, FsType, OVERLAYFS_SUPER_MAGIC, TMPFS_MAGIC,
     XFS_SUPER_MAGIC, statfs,
 };
+use sqlx::ConnectOptions;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
-pub async fn setup_database(db_uri: &str) -> sqlx::SqlitePool {
+pub async fn setup_database(
+    db_uri: &str,
+    slow_query_threshold: std::time::Duration,
+) -> sqlx::SqlitePool {
     let options = db_uri
         .parse::<SqliteConnectOptions>()
         .expect("Invalid DATABASE_URL");
@@ -22,7 +26,8 @@ pub async fn setup_database(db_uri: &str) -> sqlx::SqlitePool {
         .pragma("cache_size", "-20000")
         .pragma("temp_store", "MEMORY")
         .pragma("busy_timeout", "5000")
-        .pragma("auto_vacuum", "INCREMENTAL");
+        .pragma("auto_vacuum", "INCREMENTAL")
+        .log_slow_statements(log::LevelFilter::Warn, slow_query_threshold);
 
     let pool = SqlitePoolOptions::new()
         // WAL allows concurrent readers; 1 writer serializes anyway.
