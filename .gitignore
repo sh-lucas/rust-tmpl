@@ -7,3 +7,4 @@
 bench/*
 *.key
 migrations/schema.sql
+/book

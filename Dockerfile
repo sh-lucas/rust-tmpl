@@ -8,6 +8,9 @@ WORKDIR /app
 # Copy binary from host build context (pre-built on the runner)
 COPY ./target/aarch64-unknown-linux-musl/release/rust-tmpl /app/rust-tmpl
 
+# Rendered mdBook served at /docs (build it with `mdbook build` before the image)
+COPY ./book /app/book
+
 # Expose port
 EXPOSE 80
 
@@ -15,5 +18,6 @@ EXPOSE 80
 ENV PORT=80
 ENV DATABASE_URL=sqlite:///app/database.db
 ENV JWT_SECRET=super-secret-jwt-key
+ENV BOOK_ROOT=/app/book
 
 CMD ["/app/rust-tmpl"]

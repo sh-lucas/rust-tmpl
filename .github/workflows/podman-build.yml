@@ -1,0 +1,145 @@
+name: Release Rust Template
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-changelog:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check new version in changelog
+        id: version
+        run: |
+          ./scripts/version/sync.sh --check-new
+          VERSION=$(sed -nE 's/^## v?([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' specs/changelog.md | head -n 1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Run tests
+    needs: check-changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+      - name: Setup Mock Database
+        run: |
+          sqlite3 /tmp/db.sqlite "VACUUM;"
+          cat migrations/*.sql | sqlite3 /tmp/db.sqlite
+      - name: Run test suite
+        run: cargo test
+        env:
+          DATABASE_URL: sqlite:///tmp/db.sqlite
+          JWT_SECRET: s3cr3t-test-key
+
+  release:
+    name: Build, tag and push container
+    if: github.event_name == 'push'
+    needs: [check-changelog, test]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          cache-bin: false
+
+      - name: Install release tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools podman sqlite3
+          MDBOOK_VERSION=0.5.4
+          MDBOOK_SHA256=753e5c5c363ee8a56972344dcf91466f005a51db84a7aeffe427ae3ef83d6d44
+          ARCHIVE="mdbook-v${MDBOOK_VERSION}-aarch64-unknown-linux-musl.tar.gz"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/$ARCHIVE" \
+            "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/$ARCHIVE"
+          echo "$MDBOOK_SHA256  $RUNNER_TEMP/$ARCHIVE" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/$ARCHIVE" -C "$RUNNER_TEMP" mdbook
+          install -m 0755 "$RUNNER_TEMP/mdbook" "$HOME/.cargo/bin/mdbook"
+
+      - name: Build release
+        env:
+          DATABASE_URL: sqlite:///tmp/db.sqlite
+          CC_aarch64_unknown_linux_musl: musl-gcc
+          CFLAGS_aarch64_unknown_linux_musl: -O3 -mcpu=neoverse-n1
+          RUSTFLAGS: -C target-cpu=neoverse-n1
+        run: |
+          sqlite3 /tmp/db.sqlite "VACUUM;"
+          cat migrations/*.sql | sqlite3 /tmp/db.sqlite
+          ./scripts/version/sync.sh --sync --force
+          mdbook build
+          cargo build --release --target aarch64-unknown-linux-musl
+
+      - name: Create release commit and tag
+        env:
+          VERSION: ${{ needs.check-changelog.outputs.version }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore(release): v$VERSION"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin HEAD:main "v$VERSION"
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_CLIENT }}
+          oauth-secret: ${{ secrets.TAILSCALE_SECRET }}
+          tags: tag:gh-runner
+
+      - name: Build and push versioned image
+        env:
+          VERSION: ${{ needs.check-changelog.outputs.version }}
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          TAILSCALE_REGISTRY_IP: ${{ secrets.TAILSCALE_REGISTRY_IP }}
+        run: |
+          echo "$TAILSCALE_REGISTRY_IP registry.sh-lucas.dev" | sudo tee -a /etc/hosts
+          echo "$REGISTRY_PASSWORD" | podman login registry.sh-lucas.dev \
+            -u "$REGISTRY_USER" --password-stdin
+          podman build -t "registry.sh-lucas.dev/rust-tmpl:$VERSION" .
+          podman push "registry.sh-lucas.dev/rust-tmpl:$VERSION"
+
+  sync-develop:
+    name: Fast-forward/merge main into develop
+    if: github.event_name == 'push'
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: develop
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge main into develop
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git merge origin/main --no-edit
+          git push origin develop
