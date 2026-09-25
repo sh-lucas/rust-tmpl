@@ -15,14 +15,27 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check new version in changelog
+        with:
+          fetch-depth: 0
+      - name: Read version from changelog
         id: version
         run: |
-          ./scripts/version/sync.sh --check-new
-          VERSION=$(sed -nE 's/^## v?([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' specs/changelog.md | head -n 1)
+          VERSION=$(awk '/^## / { if ($0 ~ /^## v[0-9]+\.[0-9]+\.[0-9]+$/) { sub(/^## v/, ""); print } exit }' specs/changelog.md)
+          test -n "$VERSION" || { echo 'Expected top changelog version in ## vX.Y.Z format' >&2; exit 1; }
+          LATEST=$(git tag --sort=-v:refname | head -n 1 | sed 's/^v//')
+          if [ -z "$LATEST" ] || { [ "$VERSION" != "$LATEST" ] && [ "$(printf '%s\n' "$LATEST" "$VERSION" | sort -V | tail -n 1)" = "$VERSION" ]; }; then
+            RELEASE=true
+          elif [ "$VERSION" = "$LATEST" ]; then
+            RELEASE=false
+          else
+            echo "Changelog version $VERSION is older than latest tag $LATEST" >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
   test:
     name: Run tests
@@ -46,7 +59,7 @@ jobs:
 
   release:
     name: Build, tag and push container
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.check-changelog.outputs.release == 'true'
     needs: [check-changelog, test]
     runs-on: ubuntu-24.04-arm
     permissions:
@@ -87,20 +100,15 @@ jobs:
         run: |
           sqlite3 /tmp/db.sqlite "VACUUM;"
           cat migrations/*.sql | sqlite3 /tmp/db.sqlite
-          ./scripts/version/sync.sh --sync --force
           mdbook build
           cargo build --release --target aarch64-unknown-linux-musl
 
-      - name: Create release commit and tag
+      - name: Tag release
         env:
           VERSION: ${{ needs.check-changelog.outputs.version }}
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add Cargo.toml Cargo.lock
-          git commit -m "chore(release): v$VERSION"
           git tag -a "v$VERSION" -m "Release v$VERSION"
-          git push origin HEAD:main "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v2
@@ -124,8 +132,8 @@ jobs:
 
   sync-develop:
     name: Fast-forward/merge main into develop
-    if: github.event_name == 'push'
-    needs: release
+    if: always() && github.event_name == 'push' && needs.test.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped')
+    needs: [release, test]
     runs-on: ubuntu-latest
     permissions:
       contents: write

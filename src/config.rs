@@ -51,7 +51,7 @@ impl Config {
                 service_name: env::var("OTEL_SERVICE_NAME")
                     .unwrap_or_else(|_| env!("CARGO_PKG_NAME").to_string()),
                 service_version: env::var("OTEL_SERVICE_VERSION")
-                    .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string()),
+                    .unwrap_or_else(|_| env!("APP_VERSION").to_string()),
                 deployment_environment: env::var("DEPLOYMENT_ENVIRONMENT")
                     .unwrap_or_else(|_| "local".to_string()),
                 otlp_endpoint,
